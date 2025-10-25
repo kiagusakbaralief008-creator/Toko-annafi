@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Toko Annafi — POS Responsive</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body{font-family:Inter,system-ui}
+    .card{background:white;box-shadow:0 4px 10px rgba(0,0,0,.06)}
+    .modal-backdrop{backdrop-filter:blur(3px)}
+  </style>
+</head>
+<body class="bg-gray-50 text-slate-800">
+
+<div class="min-h-screen flex flex-col md:flex-row">
+
+  <!-- Sidebar -->
+  <aside class="md:w-72 bg-white border-r hidden md:flex flex-col">
+    <div class="p-4 border-b font-semibold">Toko Annafi</div>
+    <nav class="p-4 space-y-2 flex-1">
+      <button data-v="dashboard" class="menu-btn w-full text-left px-3 py-2 rounded hover:bg-blue-100">Dashboard</button>
+      <button data-v="products" class="menu-btn w-full text-left px-3 py-2 rounded hover:bg-blue-100">Data Barang</button>
+      <button data-v="stock" class="menu-btn w-full text-left px-3 py-2 rounded hover:bg-blue-100">Stok & Transaksi</button>
+      <button data-v="report" class="menu-btn w-full text-left px-3 py-2 rounded hover:bg-blue-100">Laporan</button>
+    </nav>
+  </aside>
+
+  <main class="flex-1 p-4 space-y-4">
+    <div class="md:hidden flex justify-between items-center">
+      <button id="menuBtn" class="p-2 bg-white border rounded">☰</button>
+      <div class="font-semibold">Toko Annafi</div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toastRoot" class="fixed left-4 top-6 space-y-2 z-50"></div>
+
+<script>
+const KEY_P='anna_products',KEY_T='anna_trans';
+const CATS=['Peralatan Rumah Tangga','ATK','Alat & Umpan Pancing','Bumbu / Kebutuhan Dapur','Minuman','Snack'];
+const load=k=>JSON.parse(localStorage.getItem(k)||'[]');
+const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const money=v=>'Rp '+Number(v||0).toLocaleString('id-ID');
+function toast(m){const r=document.getElementById('toastRoot');const e=document.createElement('div');e.className='bg-white border p-2 rounded shadow';e.innerText=m;r.append(e);setTimeout(()=>e.remove(),2000);}
+
+if(!localStorage.getItem(KEY_P))save(KEY_P,[{id:uid(),name:'Sapu Lidi',cat:'Peralatan Rumah Tangga',buy:10000,sell:15000,stock:5}]);
+if(!localStorage.getItem(KEY_T))save(KEY_T,[]);
+
+const view=document.getElementById('view');
+document.querySelectorAll('.menu-btn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.menu-btn').forEach(x=>x.classList.remove('bg-blue-100'));b.classList.add('bg-blue-100');render(b.dataset.v)});
+document.getElementById('menuBtn').onclick=()=>document.querySelector('aside').classList.toggle('hidden');
+
+function render(v){
+  view.innerHTML='';
+  if(v==='products')return showProducts();
+  if(v==='stock')return showStock();
+  if(v==='report')return showReport();
+  return showDashboard();
+}
+
+/* Dashboard */
+function showDashboard(){
+  const trans=load(KEY_T);
+  const dates=[...new Set(trans.map(t=>t.date))].slice(-10);
+  const sums=dates.map(d=>trans.filter(t=>t.date===d&&t.type==='out').reduce((s,x)=>s+x.total,0));
+  view.innerHTML=`<div class="card p-4 rounded">
+    <h2 class="font-semibold mb-2">Grafik Penjualan</h2>
+    <canvas id="chart"></canvas>
+  </div>`;
+  new Chart(document.getElementById('chart'),{type:'line',data:{labels:dates,datasets:[{label:'Penjualan',data:sums,borderColor:'#2563eb',fill:false}]},options:{plugins:{legend:{display:false}}}});
+}
+
+/* Products + filter kategori */
+function showProducts(selectedCat='Semua'){
+  const prods=load(KEY_P);
+  const filtered=selectedCat==='Semua'?prods:prods.filter(p=>p.cat===selectedCat);
+
+  view.innerHTML=`<div class="flex flex-col md:flex-row md:items-center justify-between mb-2 gap-2">
+    <h2 class="font-semibold">Data Barang</h2>
+    <div class="flex items-center gap-2">
+      <select id="catFilter" class="border p-2 rounded text-sm">
+        <option>Semua</option>
+        ${CATS.map(c=>`<option ${c===selectedCat?'selected':''}>${c}</option>`).join('')}
+      </select>
+      <button id="addP" class="bg-blue-600 text-white px-3 py-1 rounded">+ Tambah</button>
+    </div>
+  </div>
+  <div class="card p-2 rounded overflow-x-auto">
+    <table class="w-full text-sm hidden md:table">
+      <thead class="border-b"><tr><th>Nama</th><th>Kategori</th><th>Stok</th><th>Beli</th><th>Jual</th><th>Aksi</th></tr></thead>
+      <tbody>${filtered.map((p,i)=>`<tr class="border-t"><td>${p.name}</td><td>${p.cat}</td><td>${p.stock}</td><td>${money(p.buy)}</td><td>${money(p.sell)}</td><td><button data-id="${p.id}" class="edit text-blue-600 text-xs mr-2">Edit</button><button data-id="${p.id}" class="del text-red-600 text-xs">Hapus</button></td></tr>`).join('')}</tbody>
+    </table>
+    <div class="space-y-2 md:hidden">
+      ${filtered.map(p=>`<div class="border p-2 rounded"><div class="font-semibold">${p.name}</div><div class="text-xs">${p.cat}</div><div class="text-sm mt-1">Stok: ${p.stock}<br>Beli: ${money(p.buy)} | Jual: ${money(p.sell)}</div>
+      <div class="mt-2"><button data-id="${p.id}" class="edit text-blue-600 text-xs mr-3">Edit</button><button data-id="${p.id}" class="del text-red-600 text-xs">Hapus</button></div></div>`).join('')}
+    </div>
+  </div>`;
+
+  document.getElementById('catFilter').onchange=e=>showProducts(e.target.value);
+  document.getElementById('addP').onclick=()=>productModal();
+  view.querySelectorAll('.edit').forEach(b=>b.onclick=()=>productModal(prods.find(p=>p.id===b.dataset.id)));
+  view.querySelectorAll('.del').forEach(b=>b.onclick=()=>{
+    if(confirm('Hapus?')){const ps=load(KEY_P).filter(p=>p.id!==b.dataset.id);save(KEY_P,ps);toast('Dihapus');showProducts(selectedCat);}
+  });
+}
+
+/* modal tambah/edit */
+function productModal(p){
+  const m=showModal(`<div class="bg-white p-4 rounded shadow w-full max-w-sm mx-auto">
+    <div class="font-semibold mb-2">${p?'Edit':'Tambah'} Produk</div>
+    <input id="n" placeholder="Nama" class="border p-2 w-full mb-2" value="${p?p.name:''}">
+    <select id="c" class="border p-2 w-full mb-2">
+      <option disabled ${!p?'selected':''}>Pilih Kategori</option>
+      ${CATS.map(c=>`<option ${p&&p.cat===c?'selected':''}>${c}</option>`).join('')}
+    </select>
+    <input id="b" type="number" placeholder="Harga Beli" class="border p-2 w-full mb-2" value="${p?p.buy:''}">
+    <input id="s" type="number" placeholder="Harga Jual" class="border p-2 w-full mb-2" value="${p?p.sell:''}">
+    <button id="save" class="bg-blue-600 text-white px-3 py-1 rounded w-full">Simpan</button>
+  </div>`);
+  document.getElementById('save').onclick=()=>{
+    const ps=load(KEY_P);
+    const d={name:n.value,cat:c.value,buy:+b.value,sell:+s.value,stock:p?p.stock:0,id:p?p.id:uid()};
+    if(p){ps[ps.findIndex(x=>x.id===p.id)]=d;}else ps.push(d);
+    save(KEY_P,ps);toast('Tersimpan');m.close();showProducts();
+  }
+}
+
+/* Stock + transaksi */
+function showStock(){
+  const prods=load(KEY_P);
+  const trans=load(KEY_T);
+  view.innerHTML=`<div class="grid md:grid-cols-2 gap-3">
+    <div class="card p-3 rounded"><div class="font-semibold mb-2">Barang Masuk</div>
+      <select id="inP" class="border p-2 w-full mb-2">${prods.map(p=>`<option value="${p.id}">${p.name}</option>`)}</select>
+      <input id="inQ" type="number" placeholder="Jumlah" class="border p-2 w-full mb-2">
+      <button id="inBtn" class="bg-blue-600 text-white px-3 py-1 rounded w-full">Tambah Stok</button></div>
+    <div class="card p-3 rounded"><div class="font-semibold mb-2">Penjualan</div>
+      <select id="outP" class="border p-2 w-full mb-2">${prods.map(p=>`<option value="${p.id}">${p.name}</option>`)}</select>
+      <input id="outQ" type="number" placeholder="Jumlah" class="border p-2 w-full mb-2">
+      <button id="outBtn" class="bg-blue-600 text-white px-3 py-1 rounded w-full">Jual</button></div>
+  </div>
+  <div class="card p-3 rounded mt-3">
+    <h3 class="font-semibold mb-2">Riwayat Transaksi</h3>
+    <table class="w-full text-sm hidden md:table">
+      <thead class="border-b"><tr><th>Tanggal</th><th>Produk</th><th>Qty</th><th>Jenis</th><th>Total</th></tr></thead>
+      <tbody>${trans.map(t=>`<tr class="border-t"><td>${t.date}</td><td>${t.productName}</td><td>${t.qty}</td><td>${t.type}</td><td>${money(t.total)}</td></tr>`).join('')}</tbody>
+    </table>
+    <div class="space-y-2 md:hidden">
+      ${trans.map(t=>`<div class="border p-2 rounded"><div class="font-semibold">${t.productName}</div><div class="text-xs">${t.date}</div><div class="text-sm mt-1">${t.type} - ${t.qty} pcs (${money(t.total)})</div></div>`).join('')}
+    </div>
+  </div>`;
+  document.getElementById('inBtn').onclick=()=>{
+    const id=inP.value,q=+inQ.value;if(!q)return;
+    const ps=load(KEY_P);const p=ps.find(x=>x.id===id);p.stock+=q;save(KEY_P,ps);
+    const ts=load(KEY_T);ts.unshift({id:uid(),date:new Date().toISOString().slice(0,10),productId:id,productName:p.name,qty:q,type:'in',total:0});save(KEY_T,ts);
+    toast('Stok ditambah');showStock();
+  }
+  document.getElementById('outBtn').onclick=()=>{
+    const id=outP.value,q=+outQ.value;if(!q)return;
+    const ps=load(KEY_P);const p=ps.find(x=>x.id===id);if(p.stock<q)return alert('Stok kurang');p.stock-=q;save(KEY_P,ps);
+    const ts=load(KEY_T);const total=q*p.sell;ts.unshift({id:uid(),date:new Date().toISOString().slice(0,10),productId:id,productName:p.name,qty:q,type:'out',total});save(KEY_T,ts);
+    toast('Terjual');showStock();
+  }
+}
+
+/* Laporan */
+function showReport(){
+  const trans=load(KEY_T).filter(t=>t.type==='out');
+  view.innerHTML=`<div class="card p-3 rounded">
+  <div class="font-semibold mb-2">Laporan Penjualan</div>
+  <table class="w-full text-sm hidden md:table">
+    <thead class="border-b"><tr><th>Tanggal</th><th>Produk</th><th>Qty</th><th>Total</th></tr></thead>
+    <tbody>${trans.map(t=>`<tr class="border-t"><td>${t.date}</td><td>${t.productName}</td><td>${t.qty}</td><td>${money(t.total)}</td></tr>`).join('')}</tbody>
+  </table>
+  <div class="space-y-2 md:hidden">
+    ${trans.map(t=>`<div class="border p-2 rounded"><div class="font-semibold">${t.productName}</div><div class="text-xs">${t.date}</div><div class="text-sm mt-1">${t.qty} pcs — ${money(t.total)}</div></div>`).join('')}
+  </div>
+  </div>`;
+}
+
+/* modal util */
+function showModal(html){
+  const r=document.getElementById('modalRoot');
+  r.innerHTML=`<div class="fixed inset-0 flex items-center justify-center bg-black/40 modal-backdrop"><div>${html}</div></div>`;
+  r.onclick=e=>{if(e.target.classList.contains('modal-backdrop'))r.innerHTML='';}
+  return{close:()=>r.innerHTML=''};
+}
+
+render('dashboard');
+</script>
+</body>
+</html>
